@@ -1,0 +1,310 @@
+name: Terraform
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-cloud Terraform pipeline — AWS, Azure, GCP
+# Run from: Actions → Terraform → Run workflow
+#
+# REQUIRED SECRETS (set at repo level, override per GitHub Environment):
+#
+#   S3 backend (shared by all clouds):
+#     TF_STATE_BUCKET          S3 bucket name
+#     TF_STATE_LOCK_TABLE      DynamoDB table name
+#     AWS_ACCESS_KEY_ID        IAM key for S3/DynamoDB state access
+#     AWS_SECRET_ACCESS_KEY    IAM secret for S3/DynamoDB state access
+#     AWS_REGION               S3 bucket region (e.g. us-east-1)
+#
+#   Azure:
+#     ARM_CLIENT_ID            Service principal app ID
+#     ARM_CLIENT_SECRET        Service principal password
+#     ARM_TENANT_ID            Azure AD tenant ID
+#     ARM_SUBSCRIPTION_ID      Azure subscription ID
+#
+#   AWS (resource provisioning — separate from S3 backend IAM user):
+#     AWS_PROVIDER_ACCESS_KEY_ID
+#     AWS_PROVIDER_SECRET_ACCESS_KEY
+#     AWS_PROVIDER_REGION
+#
+#   GCP:
+#     GCP_CREDENTIALS          Service account JSON key (full file contents)
+#     GCP_PROJECT_ID           GCP project ID
+#
+# STATE FILE PATHS in S3 (one per cloud+environment, no workspaces needed):
+#   azure/azure-kubernetes-service/<env>/terraform.tfstate
+#   aws/eks-cluster/<env>/terraform.tfstate
+#   gcp/gke-cluster/<env>/terraform.tfstate
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud:
+        description: "Cloud provider"
+        required: true
+        type: choice
+        options: [azure, aws, gcp]
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        options: [dev, qa, staging, prod]
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options: [plan, apply, destroy]
+      branch:
+        description: "Branch to deploy from"
+        required: true
+        type: string
+        default: "main"
+
+# One run at a time per cloud+environment — prevents two applies hitting the same state file
+concurrency:
+  group: terraform-${{ github.event.inputs.cloud }}-${{ github.event.inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Resolve paths from the cloud input ─────────────────────────────────────
+  resolve:
+    name: "Resolve (${{ github.event.inputs.cloud }} / ${{ github.event.inputs.environment }})"
+    runs-on: ubuntu-latest
+    outputs:
+      working_dir: ${{ steps.resolve.outputs.working_dir }}
+      service:     ${{ steps.resolve.outputs.service }}
+      state_key:   ${{ steps.resolve.outputs.state_key }}
+
+    steps:
+      - name: Resolve working directory and state key
+        id: resolve
+        run: |
+          case "${{ github.event.inputs.cloud }}" in
+            azure) SERVICE="azure-kubernetes-service" ;;
+            aws)   SERVICE="eks-cluster"              ;;
+            gcp)   SERVICE="gke-cluster"              ;;
+            *)     echo "::error::Unknown cloud"; exit 1 ;;
+          esac
+
+          WORKING_DIR="terraform/${{ github.event.inputs.cloud }}/${SERVICE}"
+          STATE_KEY="${{ github.event.inputs.cloud }}/${SERVICE}/${{ github.event.inputs.environment }}/terraform.tfstate"
+
+          echo "working_dir=${WORKING_DIR}" >> "$GITHUB_OUTPUT"
+          echo "service=${SERVICE}"         >> "$GITHUB_OUTPUT"
+          echo "state_key=${STATE_KEY}"     >> "$GITHUB_OUTPUT"
+
+          echo "Cloud       : ${{ github.event.inputs.cloud }}"
+          echo "Service     : ${SERVICE}"
+          echo "Environment : ${{ github.event.inputs.environment }}"
+          echo "Action      : ${{ github.event.inputs.action }}"
+          echo "Branch      : ${{ github.event.inputs.branch }}"
+          echo "State key   : ${STATE_KEY}"
+
+  # ── AZURE ──────────────────────────────────────────────────────────────────
+  terraform-azure:
+    name: "Azure | ${{ github.event.inputs.action }} | ${{ github.event.inputs.environment }}"
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: github.event.inputs.cloud == 'azure'
+    environment: ${{ github.event.inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: ${{ needs.resolve.outputs.working_dir }}
+
+    env:
+      ARM_CLIENT_ID:       ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET:   ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID:       ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ needs.resolve.outputs.state_key }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -var="subscription_id=${{ secrets.ARM_SUBSCRIPTION_ID }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -var="subscription_id=${{ secrets.ARM_SUBSCRIPTION_ID }}" \
+            -auto-approve
+
+      - name: Upload k8s manifests
+        if: github.event.inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifests-azure-${{ github.event.inputs.environment }}-${{ github.run_id }}
+          path: ${{ needs.resolve.outputs.working_dir }}/k8s-manifests/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ── AWS ────────────────────────────────────────────────────────────────────
+  terraform-aws:
+    name: "AWS | ${{ github.event.inputs.action }} | ${{ github.event.inputs.environment }}"
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: github.event.inputs.cloud == 'aws'
+    environment: ${{ github.event.inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: ${{ needs.resolve.outputs.working_dir }}
+
+    env:
+      # Provider credentials for AWS resource provisioning
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_PROVIDER_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_PROVIDER_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_PROVIDER_REGION }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        # Pass S3 backend keys explicitly so they don't override the provider keys set in env
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ needs.resolve.outputs.state_key }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="access_key=${{ secrets.AWS_ACCESS_KEY_ID }}" \
+            -backend-config="secret_key=${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -auto-approve
+
+      - name: Upload k8s manifests
+        if: github.event.inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifests-aws-${{ github.event.inputs.environment }}-${{ github.run_id }}
+          path: ${{ needs.resolve.outputs.working_dir }}/k8s-manifests/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # ── GCP ────────────────────────────────────────────────────────────────────
+  terraform-gcp:
+    name: "GCP | ${{ github.event.inputs.action }} | ${{ github.event.inputs.environment }}"
+    runs-on: ubuntu-latest
+    needs: resolve
+    if: github.event.inputs.cloud == 'gcp'
+    environment: ${{ github.event.inputs.environment }}
+
+    defaults:
+      run:
+        working-directory: ${{ needs.resolve.outputs.working_dir }}
+
+    env:
+      GOOGLE_CREDENTIALS:    ${{ secrets.GCP_CREDENTIALS }}
+      AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION:    ${{ secrets.AWS_REGION }}
+      TF_IN_AUTOMATION: "true"
+      TF_INPUT: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.branch }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.9"
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ needs.resolve.outputs.state_key }}" \
+            -backend-config="region=${{ secrets.AWS_REGION }}" \
+            -backend-config="dynamodb_table=${{ secrets.TF_STATE_LOCK_TABLE }}" \
+            -backend-config="encrypt=true"
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        run: |
+          terraform plan \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply'
+        run: terraform apply -auto-approve tfplan
+
+      - name: Terraform Destroy
+        if: github.event.inputs.action == 'destroy'
+        run: |
+          terraform destroy \
+            -var-file="values/${{ github.event.inputs.environment }}.tfvars" \
+            -var="project_id=${{ secrets.GCP_PROJECT_ID }}" \
+            -auto-approve
+
+      - name: Upload k8s manifests
+        if: github.event.inputs.action == 'apply'
+        uses: actions/upload-artifact@v4
+        with:
+          name: k8s-manifests-gcp-${{ github.event.inputs.environment }}-${{ github.run_id }}
+          path: ${{ needs.resolve.outputs.working_dir }}/k8s-manifests/
+          if-no-files-found: ignore
+          retention-days: 30
