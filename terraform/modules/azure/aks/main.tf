@@ -16,6 +16,10 @@ resource "azurerm_kubernetes_cluster" "aks" {
   dns_prefix          = var.dns_prefix
   kubernetes_version  = var.kubernetes_version
 
+  # CMK encryption for OS disks across all node pools — top-level cluster argument
+  # The Disk Encryption Set must have Key Vault Crypto access BEFORE AKS is created.
+  disk_encryption_set_id = var.disk_encryption_set_id
+
   # System-assigned managed identity for the control plane
   identity {
     type = "SystemAssigned"
@@ -36,10 +40,6 @@ resource "azurerm_kubernetes_cluster" "aks" {
     vnet_subnet_id  = var.system_subnet_id
     os_disk_size_gb = var.node_os_disk_size_gb
     os_disk_type    = "Managed"
-
-    # CMK encryption on OS disks via Disk Encryption Set
-    # The DES must have Key Vault Crypto access BEFORE AKS is created.
-    disk_encryption_set_id = var.disk_encryption_set_id
 
     only_critical_addons_enabled = true
 
@@ -108,8 +108,8 @@ resource "azurerm_kubernetes_cluster_node_pool" "user" {
   os_disk_type    = "Managed"
   mode            = "User"
 
-  # CMK on user node OS disks too
-  disk_encryption_set_id = var.disk_encryption_set_id
+  # disk_encryption_set_id is set at the cluster level (above) and applies
+  # to all node pools automatically — no need to repeat it here.
 
   node_labels = {
     "workload-type" = "application"
