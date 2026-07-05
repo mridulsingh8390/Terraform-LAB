@@ -32,12 +32,12 @@ cluster_name       = "aks-dev-cluster"
 dns_prefix         = "aksdev"
 kubernetes_version = null
 
-system_node_vm_size   = "Standard_D2s_v5"
+system_node_vm_size   = "Standard_B2s"
 system_node_autoscale = true
 system_node_min       = 1
 system_node_max       = 2
 
-user_node_vm_size   = "Standard_E4s_v5"
+user_node_vm_size   = "Standard_B4ms"
 user_node_autoscale = true
 user_node_min       = 1
 user_node_max       = 3
