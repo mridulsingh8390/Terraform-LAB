@@ -15,13 +15,13 @@ aks_system_subnet_cidr = "10.0.0.0/20"
 aks_user_subnet_cidr   = "10.0.16.0/20"
 storage_subnet_cidr    = "10.0.32.0/24"
 
-key_vault_name                    = "kv-aksqa-REPLACE"
+key_vault_name                    = "kv-aksqa-mridul05"
 kv_sku_name                       = "premium"
 kv_soft_delete_retention_days    = 30
 kv_purge_protection_enabled      = false
 kv_public_network_access_enabled = true
 
-storage_account_name     = "staksqaREPLACE"
+storage_account_name     = "staksqamridul05"
 storage_replication_type = "LRS"
 postgres_share_name      = "postgres-data"
 postgres_share_quota_gb  = 100
