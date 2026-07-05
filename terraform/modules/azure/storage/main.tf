@@ -16,9 +16,8 @@ resource "azurerm_storage_account" "sa" {
   account_tier              = "Premium"
   account_replication_type  = var.replication_type
   account_kind              = "FileStorage"
-  min_tls_version           = "TLS1_2"
-  https_traffic_only_enabled = false # NFS requires this to be false (plain TCP)
-  enable_https_traffic_only  = false
+  min_tls_version            = "TLS1_2"
+  https_traffic_only_enabled = false # NFS requires false — NFS uses plain TCP not HTTPS
 
   # Network rule: restrict to the storage subnet + AKS subnets
   network_rules {
