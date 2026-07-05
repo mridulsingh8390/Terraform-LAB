@@ -15,14 +15,14 @@ aks_system_subnet_cidr = "10.0.0.0/20"
 aks_user_subnet_cidr   = "10.0.16.0/20"
 storage_subnet_cidr    = "10.0.32.0/24"
 
-key_vault_name                    = "kv-aksprd-mridul05"
+key_vault_name                    = "kv-aksprd-REPLACE"
 kv_sku_name                       = "premium"
 kv_soft_delete_retention_days    = 90
 kv_purge_protection_enabled      = true
 kv_public_network_access_enabled = false
 kv_network_default_action        = "Deny"
 
-storage_account_name     = "staksprdmridul05"
+storage_account_name     = "staksprdREPLACE"
 storage_replication_type = "ZRS"
 postgres_share_name      = "postgres-data"
 postgres_share_quota_gb  = 500

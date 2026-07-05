@@ -26,6 +26,10 @@ resource "azurerm_subnet" "aks_user" {
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = [var.aks_user_subnet_cidr]
+
+  # Required so the storage account network ACL can allow this subnet.
+  # AKS pods (including PostgreSQL) mount Azure Files NFS from this subnet.
+  service_endpoints = ["Microsoft.Storage"]
 }
 
 resource "azurerm_subnet" "storage" {
