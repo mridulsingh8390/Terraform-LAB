@@ -26,24 +26,39 @@ resource "azurerm_storage_account" "sa" {
     virtual_network_subnet_ids = var.allowed_subnet_ids
   }
 
-  # CMK encryption — links this storage account to the Key Vault key
+  # CMK encryption requires a user-assigned identity in azurerm v4.
+  # System-assigned identity is not supported for storage account CMK.
   identity {
-    type = "SystemAssigned"
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.sa_cmk.id]
   }
 
   customer_managed_key {
     key_vault_key_id          = var.cmk_key_id
-    user_assigned_identity_id = null # use system-assigned identity
+    user_assigned_identity_id = azurerm_user_assigned_identity.sa_cmk.id
   }
 
   tags = var.tags
+
+  # Must wait for the role assignment to propagate before the storage account
+  # can use the CMK key — otherwise Azure returns a 403 on creation.
+  depends_on = [azurerm_role_assignment.sa_cmk]
 }
 
-# Grant the storage account's managed identity access to use the CMK key
+# ── User-assigned identity for CMK access ─────────────────────────────────────
+# azurerm v4 requires user-assigned identity for storage account CMK.
+
+resource "azurerm_user_assigned_identity" "sa_cmk" {
+  name                = "${var.storage_account_name}-cmk-identity"
+  location            = var.location
+  resource_group_name = var.resource_group_name
+}
+
+# Grant the user-assigned identity access to use the CMK key
 resource "azurerm_role_assignment" "sa_cmk" {
   scope                = var.key_vault_id
   role_definition_name = "Key Vault Crypto Service Encryption User"
-  principal_id         = azurerm_storage_account.sa.identity[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.sa_cmk.principal_id
 }
 
 # ── Azure Files NFS share ─────────────────────────────────────────────────────
