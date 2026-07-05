@@ -9,6 +9,8 @@
 #   - OIDC issuer + workload identity enabled
 ################################################################################
 
+data "azurerm_client_config" "current" {}
+
 resource "azurerm_kubernetes_cluster" "aks" {
   name                = var.cluster_name
   location            = var.location
@@ -78,6 +80,7 @@ resource "azurerm_kubernetes_cluster" "aks" {
   # ── Azure RBAC for K8s authorization ─────────────────────────────────────────
   azure_active_directory_role_based_access_control {
     azure_rbac_enabled = true
+    tenant_id          = data.azurerm_client_config.current.tenant_id
   }
 
   azure_policy_enabled = true
