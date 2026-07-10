@@ -227,3 +227,24 @@ resource "aws_iam_openid_connect_provider" "eks" {
 
   tags = var.tags
 }
+
+# ── KMS grant — allows node role to use the CMK for EBS encryption ────────────
+# Without this, EC2 instances launched by the node group cannot decrypt their
+# CMK-encrypted EBS root volumes and terminate immediately after launch.
+
+resource "aws_kms_grant" "nodes_ebs" {
+  name              = "${var.cluster_name}-nodes-ebs-grant"
+  key_id            = var.kms_key_arn
+  grantee_principal = aws_iam_role.eks_nodes.arn
+
+  operations = [
+    "Encrypt",
+    "Decrypt",
+    "ReEncryptFrom",
+    "ReEncryptTo",
+    "GenerateDataKey",
+    "GenerateDataKeyWithoutPlaintext",
+    "DescribeKey",
+    "CreateGrant",
+  ]
+}

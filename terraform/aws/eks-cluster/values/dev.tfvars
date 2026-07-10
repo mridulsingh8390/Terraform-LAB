@@ -28,7 +28,7 @@ system_node_desired        = 1
 system_node_min            = 1
 system_node_max            = 3
 
-user_node_instance_types = ["r5.large"]
+user_node_instance_types = ["t3.large"]
 user_node_desired        = 1
 user_node_min            = 1
 user_node_max            = 5
