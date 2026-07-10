@@ -107,7 +107,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_security_group" "eks_nodes" {
   name        = "${var.prefix}-sg-eks-nodes"
-  description = "EKS node security group — allows internal cluster traffic"
+  description = "EKS node security group - allows internal cluster traffic"
   vpc_id      = aws_vpc.vpc.id
 
   ingress {
@@ -141,7 +141,7 @@ resource "aws_security_group" "eks_nodes" {
 
 resource "aws_security_group" "efs" {
   name        = "${var.prefix}-sg-efs"
-  description = "EFS mount target — allow NFS from EKS nodes"
+  description = "EFS mount target - allow NFS from EKS nodes"
   vpc_id      = aws_vpc.vpc.id
 
   ingress {

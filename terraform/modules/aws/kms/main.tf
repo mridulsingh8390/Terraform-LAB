@@ -10,7 +10,7 @@ data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
 resource "aws_kms_key" "cmk" {
-  description             = "${var.prefix} CMK — encrypts EKS, EBS, EFS"
+  description             = "${var.prefix} CMK - encrypts EKS, EBS, EFS"
   deletion_window_in_days = var.deletion_window_in_days
   enable_key_rotation     = true
   multi_region            = false
@@ -18,7 +18,6 @@ resource "aws_kms_key" "cmk" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      # Account root: full control (required — without this you can lock yourself out)
       {
         Sid    = "AllowRootAccountFullControl"
         Effect = "Allow"
@@ -28,7 +27,15 @@ resource "aws_kms_key" "cmk" {
         Action   = "kms:*"
         Resource = "*"
       },
-      # EKS service: use the key for envelope encryption of cluster secrets
+      {
+        Sid    = "AllowCallerFullControl"
+        Effect = "Allow"
+        Principal = {
+          AWS = data.aws_caller_identity.current.arn
+        }
+        Action   = "kms:*"
+        Resource = "*"
+      },
       {
         Sid    = "AllowEKSSecretsEncryption"
         Effect = "Allow"
@@ -44,7 +51,6 @@ resource "aws_kms_key" "cmk" {
         ]
         Resource = "*"
       },
-      # EFS service: use the key to encrypt the file system
       {
         Sid    = "AllowEFSEncryption"
         Effect = "Allow"
@@ -60,7 +66,6 @@ resource "aws_kms_key" "cmk" {
         ]
         Resource = "*"
       },
-      # AutoScaling service: needs access to encrypt EBS volumes on new nodes
       {
         Sid    = "AllowAutoScalingEBSEncryption"
         Effect = "Allow"
