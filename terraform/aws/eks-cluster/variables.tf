@@ -75,6 +75,12 @@ variable "node_volume_size_gb" {
   default = 50
 }
 
+variable "enable_system_node_group" {
+  description = "Create a dedicated system node group. Set false for dev to use single user pool."
+  type        = bool
+  default     = false
+}
+
 variable "system_node_instance_types" {
   type    = list(string)
   default = ["t3.medium"]

@@ -121,9 +121,11 @@ resource "aws_eks_cluster" "eks" {
   ]
 }
 
-# ── System node group — runs kube-system pods only ────────────────────────────
+# ── System node group (optional) — runs kube-system pods only ────────────────
+# Disabled by default for dev — set enable_system_node_group = true for prod
 
 resource "aws_eks_node_group" "system" {
+  count           = var.enable_system_node_group ? 1 : 0
   cluster_name    = aws_eks_cluster.eks.name
   node_group_name = "${var.cluster_name}-system"
   node_role_arn   = aws_iam_role.eks_nodes.arn
@@ -146,7 +148,6 @@ resource "aws_eks_node_group" "system" {
     max_unavailable = 1
   }
 
-  # Taint: only CriticalAddonsOnly pods tolerate this taint
   taint {
     key    = "CriticalAddonsOnly"
     value  = "true"

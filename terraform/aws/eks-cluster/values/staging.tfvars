@@ -23,6 +23,7 @@ kubernetes_version     = "1.31"
 endpoint_public_access = true
 node_volume_size_gb    = 50
 
+enable_system_node_group = true
 system_node_instance_types = ["t3.medium"]
 system_node_desired        = 1
 system_node_min            = 1

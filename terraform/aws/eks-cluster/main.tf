@@ -54,6 +54,7 @@ module "eks" {
   endpoint_public_access = var.endpoint_public_access
   node_volume_size_gb    = var.node_volume_size_gb
 
+  enable_system_node_group   = var.enable_system_node_group
   system_node_instance_types = var.system_node_instance_types
   system_node_desired        = var.system_node_desired
   system_node_min            = var.system_node_min

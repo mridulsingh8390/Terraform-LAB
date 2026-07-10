@@ -36,6 +36,12 @@ variable "node_volume_size_gb" {
   default     = 50
 }
 
+variable "enable_system_node_group" {
+  description = "Create a dedicated system node group with CriticalAddonsOnly taint. Set false for dev/lab to use a single user node pool for all workloads."
+  type        = bool
+  default     = false
+}
+
 # ── System node group ─────────────────────────────────────────────────────────
 
 variable "system_node_instance_types" {
