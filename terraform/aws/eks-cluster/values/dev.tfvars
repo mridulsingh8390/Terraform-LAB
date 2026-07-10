@@ -19,16 +19,16 @@ efs_throughput_mode      = "elastic"
 k8s_manifest_output_path = "./k8s-manifests"
 
 cluster_name           = "eks-dev-cluster"
-kubernetes_version     = "1.31"
+kubernetes_version     = "1.34"
 endpoint_public_access = true
 node_volume_size_gb    = 50
 
 system_node_instance_types = ["t3.medium"]
 system_node_desired        = 1
 system_node_min            = 1
-system_node_max            = 3
+system_node_max            = 2
 
 user_node_instance_types = ["t3.large"]
 user_node_desired        = 1
 user_node_min            = 1
-user_node_max            = 5
+user_node_max            = 2
