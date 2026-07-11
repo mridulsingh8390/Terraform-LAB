@@ -5,6 +5,8 @@
 # required IAM roles
 ################################################################################
 
+data "aws_caller_identity" "current" {}
+
 # ── IAM Role — EKS cluster control plane ──────────────────────────────────────
 
 resource "aws_iam_role" "eks_cluster" {
@@ -229,14 +231,32 @@ resource "aws_iam_openid_connect_provider" "eks" {
   tags = var.tags
 }
 
-# ── KMS grant — allows node role to use the CMK for EBS encryption ────────────
-# Without this, EC2 instances launched by the node group cannot decrypt their
-# CMK-encrypted EBS root volumes and terminate immediately after launch.
+# ── KMS grants — allows node role and AutoScaling to use CMK for EBS ─────────
+# Belt-and-suspenders: key policy (in kms module) + grants here both grant
+# access so nodes can decrypt EBS volumes on launch regardless of policy
+# propagation timing.
 
 resource "aws_kms_grant" "nodes_ebs" {
   name              = "${var.cluster_name}-nodes-ebs-grant"
   key_id            = var.kms_key_arn
   grantee_principal = aws_iam_role.eks_nodes.arn
+
+  operations = [
+    "Encrypt",
+    "Decrypt",
+    "ReEncryptFrom",
+    "ReEncryptTo",
+    "GenerateDataKey",
+    "GenerateDataKeyWithoutPlaintext",
+    "DescribeKey",
+    "CreateGrant",
+  ]
+}
+
+resource "aws_kms_grant" "autoscaling_ebs" {
+  name              = "${var.cluster_name}-autoscaling-ebs-grant"
+  key_id            = var.kms_key_arn
+  grantee_principal = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
 
   operations = [
     "Encrypt",
