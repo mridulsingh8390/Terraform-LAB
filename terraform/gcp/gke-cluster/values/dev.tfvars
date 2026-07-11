@@ -1,5 +1,5 @@
 # GCP GKE — DEV
-project_id = "your-gcp-project-id"
+project_id = "mydemo-project-2025"
 region     = "us-central1"
 prefix     = "gke-dev"
 
@@ -32,4 +32,4 @@ system_node_max          = 2
 
 user_node_machine_type = "n2-highmem-4"
 user_node_min          = 1
-user_node_max          = 3
+user_node_max          = 2
