@@ -115,6 +115,107 @@ Additionally, two **KMS Grants** are created by Terraform:
 
 ---
 
+## Verify CMK is Working (Azure AKS)
+
+Run after apply to confirm all Azure resources are CMK encrypted:
+
+```bash
+# Set variables matching your dev.tfvars values
+RG="rg-aks-dev"
+KV_NAME="kv-aksdev-mridul05"
+CLUSTER_NAME="aks-dev-cluster"
+STORAGE_ACCOUNT="staksmridul05dev"
+
+echo "========================================="
+echo " Azure AKS CMK Verification"
+echo "========================================="
+
+echo ""
+echo "=== 1. Key Vault status ==="
+az keyvault show \
+  --name "$KV_NAME" \
+  --resource-group "$RG" \
+  --query "{Name:name,PurgeProtection:properties.enablePurgeProtection,SoftDelete:properties.enableSoftDelete,RbacEnabled:properties.enableRbacAuthorization}" \
+  --output table
+
+echo ""
+echo "=== 2. CMK Key in Key Vault ==="
+az keyvault key list \
+  --vault-name "$KV_NAME" \
+  --query "[].{Name:name,Enabled:attributes.enabled,KeyType:keyType}" \
+  --output table
+
+echo ""
+echo "=== 3. Disk Encryption Set (AKS OS disk CMK) ==="
+az disk-encryption-set show \
+  --name "aks-dev-des" \
+  --resource-group "$RG" \
+  --query "{Name:name,KeyUrl:activeKey.keyUrl,ProvisioningState:provisioningState}" \
+  --output table
+
+echo ""
+echo "=== 4. AKS cluster - disk encryption set attached ==="
+az aks show \
+  --name "$CLUSTER_NAME" \
+  --resource-group "$RG" \
+  --query "{Name:name,DiskEncryptionSetId:diskEncryptionSetID,ProvisioningState:provisioningState}" \
+  --output table
+
+echo ""
+echo "=== 5. AKS node OS disks - CMK encrypted ==="
+NODE_RG=$(az aks show \
+  --name "$CLUSTER_NAME" \
+  --resource-group "$RG" \
+  --query "nodeResourceGroup" -o tsv)
+
+echo "Node resource group: $NODE_RG"
+
+az disk list \
+  --resource-group "$NODE_RG" \
+  --query "[].{Name:name,DiskEncryptionSet:encryption.diskEncryptionSetId,SizeGB:diskSizeGb}" \
+  --output table
+
+echo ""
+echo "=== 6. Storage Account - CMK encryption ==="
+az storage account show \
+  --name "$STORAGE_ACCOUNT" \
+  --resource-group "$RG" \
+  --query "{Name:name,KeySource:encryption.keySource,KeyVaultUri:encryption.keyVaultProperties.keyVaultUri,KeyName:encryption.keyVaultProperties.keyName}" \
+  --output table
+
+echo ""
+echo "=== 7. Azure Files NFS share ==="
+az storage share-rm list \
+  --storage-account "$STORAGE_ACCOUNT" \
+  --resource-group "$RG" \
+  --query "[].{Name:name,QuotaGB:shareQuota,Protocol:enabledProtocols}" \
+  --output table
+
+echo ""
+echo "=== 8. Role assignments on Key Vault ==="
+KV_ID=$(az keyvault show --name "$KV_NAME" --resource-group "$RG" --query id -o tsv)
+az role assignment list \
+  --scope "$KV_ID" \
+  --query "[].{Principal:principalName,Role:roleDefinitionName}" \
+  --output table
+
+echo ""
+echo "========================================="
+echo " Azure CMK Verification Complete"
+echo "========================================="
+```
+
+**Expected results:**
+- Key Vault: `PurgeProtection: true`, `RbacEnabled: true` ✅
+- CMK Key: `Enabled: true`, `KeyType: RSA` ✅
+- Disk Encryption Set: `ProvisioningState: Succeeded` with Key Vault key URL ✅
+- AKS cluster: `DiskEncryptionSetId` populated (not null) ✅
+- Node OS disks: `DiskEncryptionSet` populated ✅
+- Storage Account: `KeySource: Microsoft.Keyvault` ✅
+- Azure Files share: NFS protocol enabled ✅
+
+---
+
 ## Verify CMK is Working (AWS)
 
 Run after apply to confirm all resources are CMK encrypted:
